@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - .:/code
+      - static_volume:/code/staticfiles
+    ports:
+      - "8000:8000"
+    environment:
+      - DJANGO_MONGO_URI=mongodb://db:27017/roombooking
+    depends_on:
+      - db
+
+  db:
+    image: mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data_volume:/data/db
+    environment:
+      - MONGO_INITDB_DATABASE=roombooking
+
+volumes:
+  static_volume:
+  mongo_data_volume:
