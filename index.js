@@ -1,26 +1,33 @@
+require("dotenv").config();
 const express = require("express");
-const { ApolloServer } = require("apollo-server-express");
-const schema = require("schema"); // Adjust the path as necessary to point to your schema.js file
+const { graphqlHTTP } = require("express-graphql");
+const schema = require("./schema.js");
+const connectDB = require("./database.js");
 
-async function startServer() {
-  const app = express();
-  const apolloServer = new ApolloServer({
-    schema, // This should be the GraphQL schema object from your schema.js
-    context: ({ req }) => {
-      // Add logic to confirm user role is 'manager' for certain mutations
-      return { user: req.user, role: req.user.role };
-    },
-  });
+const app = express();
 
-  await apolloServer.start();
+// Connect to MongoDB
+connectDB();
 
-  apolloServer.applyMiddleware({ app, path: "/graphql" });
+// Middleware for json parsing
+app.use(express.json());
 
-  app.listen({ port: 4000 }, () => {
-    console.log(
-      `Server ready at http://localhost:4000${apolloServer.graphqlPath}`
-    );
-  });
-}
+// GraphQL endpoint setup
+app.use(
+  "/graphql",
+  graphqlHTTP({
+    schema: schema,
+    graphiql: true, // Enable GraphiQL interface if desired
+  })
+);
 
-startServer();
+// Set up a basic route
+app.get("/", (req, res) => {
+  res.send("GraphQL API Running");
+});
+
+// Start the server
+const PORT = process.env.PORT || 9000;
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});

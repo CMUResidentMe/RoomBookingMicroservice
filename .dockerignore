@@ -1,0 +1,2 @@
+docker build -t my-backend-app .
+docker run -p 9000:9000 my-backend-app
