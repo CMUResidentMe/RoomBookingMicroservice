@@ -48,6 +48,16 @@ class PartyRoomStrategy extends BookingStrategy {
     await this.room.save();
     return this.room;
   }
+  async cancelBooking(bookingId, userId) {
+    const index = this.room.bookedTimes.findIndex(
+      (bt) => bt._id.toString() === bookingId && bt.user_id === userId
+    );
+    if (index !== -1) {
+      this.room.bookedTimes.splice(index, 1);
+      return this.room.save();
+    }
+    throw new Error("Booking not found or user mismatch.");
+  }
 
   async approveBooking(bookingId) {
     const index = this.room.bookedTimes.findIndex(
