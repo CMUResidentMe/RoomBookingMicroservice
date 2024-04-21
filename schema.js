@@ -24,6 +24,7 @@ const RoomType = new GraphQLObjectType({
 const BookedTimeType = new GraphQLObjectType({
   name: "BookedTime",
   fields: () => ({
+    id: { type: new GraphQLNonNull(GraphQLID) },
     date: { type: new GraphQLNonNull(GraphQLString) },
     startTime: { type: new GraphQLNonNull(GraphQLString) },
     endTime: { type: new GraphQLNonNull(GraphQLString) },
