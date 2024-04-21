@@ -36,12 +36,6 @@ const BookingType = new GraphQLObjectType({
   name: "Booking",
   fields: () => ({
     id: { type: new GraphQLNonNull(GraphQLID) },
-    room: {
-      type: RoomType,
-      resolve(parent) {
-        return Room.findById(parent.room_id);
-      },
-    },
     user_id: { type: new GraphQLNonNull(GraphQLString) },
     date: { type: new GraphQLNonNull(GraphQLString) },
     start_time: { type: new GraphQLNonNull(GraphQLString) },
@@ -66,6 +60,15 @@ const RootQuery = new GraphQLObjectType({
       },
       resolve(_, args) {
         return Room.find({ room_type: args.room_type });
+      },
+    },
+    unconfirmedPartyRooms: {
+      type: new GraphQLList(RoomType),
+      resolve() {
+        return Room.find({
+          room_type: "party",
+          "bookedTimes.is_confirmed": false,
+        });
       },
     },
   },
@@ -119,45 +122,44 @@ const Mutation = new GraphQLObjectType({
       },
       async resolve(_, args) {
         const rooms = await Room.find({ "bookedTimes._id": args.booking_id });
-        let updatedBooking = null;
-
         if (!rooms.length) {
           throw new Error("Booking not found.");
         }
+        let roomSaved = null;
+        let updatedBooking = null;
 
         rooms.forEach((room) => {
           room.bookedTimes.forEach((booking) => {
             if (booking._id.toString() === args.booking_id) {
-              booking.is_confirmed = true;
+              booking.is_confirmed = true; // Confirm the booking
+              // Ensure updatedBooking is correctly assigned
               updatedBooking = {
                 id: booking._id,
-                room: {
-                  id: room._id,
-                  name: room.name,
-                  room_type: room.room_type,
-                  bookedTimes: room.bookedTimes,
-                },
                 user_id: booking.user_id,
                 date: booking.date,
                 start_time: booking.startTime,
                 end_time: booking.endTime,
                 is_confirmed: booking.is_confirmed,
-              }; // Formatting the booking to match BookingType
+              };
             }
           });
+
           try {
-            room.save();
+            roomSaved = room.save(); // Save the room with the updated booking
           } catch (error) {
             console.error("Error saving room:", error);
             throw new Error("Failed to save room changes.");
           }
         });
 
-        if (!updatedBooking) {
-          throw new Error("No booking found to update.");
+        if (!roomSaved || !updatedBooking) {
+          throw new Error(
+            "No booking found to update or failed to save the room."
+          );
         }
 
-        return updatedBooking;
+        console.log("Updated Booking:", updatedBooking);
+        return updatedBooking; // Return the updated booking
       },
     },
     declineBooking: {
@@ -166,48 +168,50 @@ const Mutation = new GraphQLObjectType({
         booking_id: { type: new GraphQLNonNull(GraphQLID) },
       },
       async resolve(_, args) {
-        let updatedBooking = null;
         const rooms = await Room.find({ "bookedTimes._id": args.booking_id });
         if (!rooms.length) {
           throw new Error("Booking not found.");
         }
 
+        let updatedBooking = null;
+
+        // Iterate over each room to find and remove the specific booking
         rooms.forEach((room) => {
-          room.bookedTimes = room.bookedTimes.filter((booking) => {
+          const remainingBookings = [];
+          room.bookedTimes.forEach((booking) => {
             if (booking._id.toString() === args.booking_id) {
-              // Formatting the booking to match BookingType before removing it
               updatedBooking = {
                 id: booking._id,
-                room: {
-                  id: room._id,
-                  name: room.name,
-                  room_type: room.room_type,
-                  bookedTimes: room.bookedTimes.filter(
-                    (bt) => bt._id.toString() !== args.booking_id
-                  ),
-                },
                 user_id: booking.user_id,
                 date: booking.date,
                 start_time: booking.startTime,
                 end_time: booking.endTime,
-                is_confirmed: booking.is_confirmed,
+                is_confirmed: false, // Mark as not confirmed since it's declined
               };
-              return false; // removes the booking from the array
+            } else {
+              remainingBookings.push(booking); // Keep bookings not being declined
             }
-            return true;
           });
+
+          // Update the room's bookings only with those not declined
+          room.bookedTimes = remainingBookings;
+
           try {
-            room.save();
+            room.save(); // Save the room with the updated bookings array
           } catch (error) {
             console.error("Error saving room:", error);
             throw new Error("Failed to save room changes.");
           }
         });
 
+        // Ensure the booking was found and updated
         if (!updatedBooking) {
-          throw new Error("Booking not found or already removed.");
+          throw new Error(
+            "No booking found to update or failed to save the room."
+          );
         }
 
+        // Return the details of the declined booking
         return updatedBooking;
       },
     },
