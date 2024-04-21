@@ -4,39 +4,42 @@ const {
   GraphQLString,
   GraphQLList,
   GraphQLNonNull,
-  GraphQLInt,
-  GraphQLBoolean,
   GraphQLID,
-  GraphQLInputObjectType,
+  GraphQLBoolean,
 } = require("graphql");
-const Room = require("./models/Room");
-const Booking = require("./models/Booking");
+const Room = require("./models/Rooms.js");
+const Booking = require("./models/Bookings.js");
+const { getStrategy } = require("./models/BookingStrategies.js");
 
 const RoomType = new GraphQLObjectType({
   name: "Room",
   fields: () => ({
-    id: { type: GraphQLID },
-    name: { type: GraphQLString },
-    room_type: { type: GraphQLString },
-    description: { type: GraphQLString },
-    capacity: { type: GraphQLInt },
+    id: { type: new GraphQLNonNull(GraphQLID) },
+    name: { type: new GraphQLNonNull(GraphQLString) },
+    room_type: { type: new GraphQLNonNull(GraphQLString) },
+    bookedTimes: { type: new GraphQLList(BookedTimeType) },
   }),
 });
 
+const BookedTimeType = new GraphQLObjectType({
+  name: "BookedTime",
+  fields: () => ({
+    date: { type: new GraphQLNonNull(GraphQLString) },
+    startTime: { type: new GraphQLNonNull(GraphQLString) },
+    endTime: { type: new GraphQLNonNull(GraphQLString) },
+    user_id: { type: new GraphQLNonNull(GraphQLString) },
+    user_name: { type: new GraphQLNonNull(GraphQLString) },
+    is_confirmed: { type: GraphQLBoolean },
+  }),
+});
 const BookingType = new GraphQLObjectType({
   name: "Booking",
   fields: () => ({
-    id: { type: GraphQLID },
-    room: {
-      type: RoomType,
-      resolve(parent, args) {
-        return Room.findById(parent.room);
-      },
-    },
-    user_id: { type: GraphQLString },
-    date: { type: GraphQLString },
-    start_time: { type: GraphQLString },
-    end_time: { type: GraphQLString },
+    id: { type: new GraphQLNonNull(GraphQLID) },
+    user_id: { type: new GraphQLNonNull(GraphQLString) },
+    date: { type: new GraphQLNonNull(GraphQLString) },
+    start_time: { type: new GraphQLNonNull(GraphQLString) },
+    end_time: { type: new GraphQLNonNull(GraphQLString) },
     is_confirmed: { type: GraphQLBoolean },
   }),
 });
@@ -46,29 +49,25 @@ const RootQuery = new GraphQLObjectType({
   fields: {
     allRooms: {
       type: new GraphQLList(RoomType),
-      resolve(parent, args) {
+      resolve() {
         return Room.find({});
       },
     },
-    availableRoomsByType: {
+    roomsByType: {
       type: new GraphQLList(RoomType),
       args: {
-        room_type: { type: GraphQLString },
-        date: { type: GraphQLString },
-        start_time: { type: GraphQLString },
-        end_time: { type: GraphQLString },
+        room_type: { type: new GraphQLNonNull(GraphQLString) },
       },
-      async resolve(parent, args) {
-        const bookings = await Booking.find({
-          date: args.date,
-          start_time: { $lt: args.end_time },
-          end_time: { $gt: args.start_time },
-          "room.room_type": args.room_type,
-        }).populate("room");
-        const bookedRoomIds = bookings.map((booking) => booking.room.id);
+      resolve(_, args) {
+        return Room.find({ room_type: args.room_type });
+      },
+    },
+    unconfirmedPartyRooms: {
+      type: new GraphQLList(RoomType),
+      resolve() {
         return Room.find({
-          room_type: args.room_type,
-          _id: { $nin: bookedRoomIds },
+          room_type: "party",
+          "bookedTimes.is_confirmed": false,
         });
       },
     },
@@ -78,132 +77,89 @@ const RootQuery = new GraphQLObjectType({
 const Mutation = new GraphQLObjectType({
   name: "Mutation",
   fields: {
-    addRoom: {
+    createBooking: {
       type: RoomType,
       args: {
-        name: { type: GraphQLString },
-        room_type: { type: GraphQLString },
-        description: { type: GraphQLString },
-        capacity: { type: GraphQLInt },
+        room_id: { type: new GraphQLNonNull(GraphQLID) },
+        user_id: { type: new GraphQLNonNull(GraphQLString) },
+        user_name: { type: new GraphQLNonNull(GraphQLString) },
+        date: { type: new GraphQLNonNull(GraphQLString) },
+        start_time: { type: new GraphQLNonNull(GraphQLString) },
+        end_time: { type: new GraphQLNonNull(GraphQLString) },
       },
-      resolve(parent, args) {
-        let room = new Room({
-          name: args.name,
-          room_type: args.room_type,
-          description: args.description,
-          capacity: args.capacity,
-        });
-        return room.save();
-      },
-    },
-    createBooking: {
-      type: BookingType,
-      args: {
-        room_id: { type: GraphQLID },
-        user_id: { type: GraphQLString },
-        user_name: { type: GraphQLString }, // Accept user_name in mutation
-        date: { type: GraphQLString },
-        start_time: { type: GraphQLString },
-        end_time: { type: GraphQLString },
-      },
-      async resolve(parent, args) {
-        const conflicts = await Booking.findOne({
-          room_id: args.room_id,
-          date: args.date,
-          start_time: { $lt: args.end_time },
-          end_time: { $gt: args.start_time },
-        });
-        if (conflicts) {
-          throw new Error(
-            "The room is already booked for the given time slot."
-          );
+      async resolve(_, args) {
+        try {
+          const room = await Room.findById(args.room_id);
+          if (!room) {
+            throw new Error("Room not found.");
+          }
+          const strategy = getStrategy(room);
+          return await strategy.createBooking(args);
+        } catch (error) {
+          console.error("Error in createBooking mutation:", error.message);
+          throw new Error(error.message);
         }
-        let booking = new Booking({
-          room: args.room_id,
-          user_id: args.user_id,
-          user_name: args.user_name, // Store user_name in booking
-          date: args.date,
-          start_time: args.start_time,
-          end_time: args.end_time,
-          is_confirmed: false, // Assuming confirmation logic is handled separately
-        });
-        return booking.save();
       },
     },
-
     cancelBooking: {
-      type: BookingType,
+      // send kafka only if the person calling it is not the user that created it, meaning it is manager that is canceling it
+      type: RoomType,
       args: {
+        room_id: { type: new GraphQLNonNull(GraphQLID) },
         booking_id: { type: new GraphQLNonNull(GraphQLID) },
+        user_id: { type: new GraphQLNonNull(GraphQLString) },
       },
-      async resolve(parent, args) {
-        const booking = await Booking.findById(args.booking_id);
-        if (!booking) {
-          throw new Error("Booking not found.");
-        }
-        await booking.remove();
-        return booking;
+      async resolve(_, args) {
+        const room = await Room.findById(args.room_id);
+        const strategy = getStrategy(room);
+        return strategy.cancelBooking(args.booking_id, args.user_id);
       },
     },
-    updateBooking: {
-      type: BookingType,
-      args: {
-        booking_id: { type: new GraphQLNonNull(GraphQLID) },
-        new_room_id: { type: GraphQLID },
-        new_date: { type: GraphQLString },
-        new_start_time: { type: GraphQLString },
-        new_end_time: { type: GraphQLString },
-      },
-      async resolve(parent, args) {
-        const booking = await Booking.findById(args.booking_id);
-        if (!booking) {
-          throw new Error("Booking not found.");
-        }
-        // Check for room type consistency and availability
-        if (args.new_room_id) {
-          const newRoom = await Room.findById(args.new_room_id);
-          if (newRoom.room_type !== booking.room.room_type) {
-            throw new Error("Cannot change to a different type of room.");
-          }
-          // Check for conflicting bookings
-          const conflict = await Booking.findOne({
-            room_id: args.new_room_id,
-            date: args.new_date || booking.date,
-            start_time: { $lt: args.new_end_time || booking.end_time },
-            end_time: { $gt: args.new_start_time || booking.start_time },
-            _id: { $ne: args.booking_id },
-          });
-          if (conflict) {
-            throw new Error(
-              "The room is already booked for the given new time slot."
-            );
-          }
-          booking.room = args.new_room_id;
-        }
-        if (args.new_date) booking.date = args.new_date;
-        if (args.new_start_time) booking.start_time = args.new_start_time;
-        if (args.new_end_time) booking.end_time = args.new_end_time;
-
-        await booking.save();
-        return booking;
-      },
-    },
-    // MANAGERS
     approveBooking: {
       type: BookingType,
       args: {
         booking_id: { type: new GraphQLNonNull(GraphQLID) },
       },
-      async resolve(parent, args) {
-        const booking = await Booking.findById(args.booking_id);
-        if (!booking) {
+      async resolve(_, args) {
+        const rooms = await Room.find({ "bookedTimes._id": args.booking_id });
+        if (!rooms.length) {
           throw new Error("Booking not found.");
         }
-        if (booking.room.room_type !== "party") {
-          throw new Error("Only party room bookings can be approved.");
+        let roomSaved = null;
+        let updatedBooking = null;
+
+        rooms.forEach((room) => {
+          room.bookedTimes.forEach((booking) => {
+            if (booking._id.toString() === args.booking_id) {
+              booking.is_confirmed = true; // Confirm the booking
+              // Ensure updatedBooking is correctly assigned
+              updatedBooking = {
+                id: booking._id,
+                user_id: booking.user_id,
+                date: booking.date,
+                start_time: booking.startTime,
+                end_time: booking.endTime,
+                is_confirmed: booking.is_confirmed,
+              };
+            }
+          });
+
+          try {
+            roomSaved = room.save(); // Save the room with the updated booking
+          } catch (error) {
+            console.error("Error saving room:", error);
+            throw new Error("Failed to save room changes.");
+          }
+        });
+
+        if (!roomSaved || !updatedBooking) {
+          throw new Error(
+            "No booking found to update or failed to save the room."
+          );
         }
-        booking.is_confirmed = true;
-        return booking.save();
+
+        console.log("Updated Booking:", updatedBooking);
+        return updatedBooking; // Return the updated booking
       },
     },
     declineBooking: {
@@ -211,30 +167,77 @@ const Mutation = new GraphQLObjectType({
       args: {
         booking_id: { type: new GraphQLNonNull(GraphQLID) },
       },
-      async resolve(parent, args) {
-        const booking = await Booking.findById(args.booking_id);
-        if (!booking) {
+      async resolve(_, args) {
+        const rooms = await Room.find({ "bookedTimes._id": args.booking_id });
+        if (!rooms.length) {
           throw new Error("Booking not found.");
         }
-        if (booking.room.room_type !== "party") {
-          throw new Error("Only party room bookings can be declined.");
+
+        let updatedBooking = null;
+
+        // Iterate over each room to find and remove the specific booking
+        rooms.forEach((room) => {
+          const remainingBookings = [];
+          room.bookedTimes.forEach((booking) => {
+            if (booking._id.toString() === args.booking_id) {
+              updatedBooking = {
+                id: booking._id,
+                user_id: booking.user_id,
+                date: booking.date,
+                start_time: booking.startTime,
+                end_time: booking.endTime,
+                is_confirmed: false, // Mark as not confirmed since it's declined
+              };
+            } else {
+              remainingBookings.push(booking); // Keep bookings not being declined
+            }
+          });
+
+          // Update the room's bookings only with those not declined
+          room.bookedTimes = remainingBookings;
+
+          try {
+            room.save(); // Save the room with the updated bookings array
+          } catch (error) {
+            console.error("Error saving room:", error);
+            throw new Error("Failed to save room changes.");
+          }
+        });
+
+        // Ensure the booking was found and updated
+        if (!updatedBooking) {
+          throw new Error(
+            "No booking found to update or failed to save the room."
+          );
         }
-        await booking.remove();
-        return booking;
+
+        // Return the details of the declined booking
+        return updatedBooking;
+      },
+    },
+
+    createRoom: {
+      type: RoomType,
+      args: {
+        name: { type: new GraphQLNonNull(GraphQLString) },
+        room_type: { type: new GraphQLNonNull(GraphQLString) },
+      },
+      async resolve(_, args) {
+        const newRoom = new Room({
+          name: args.name,
+          room_type: args.room_type,
+        });
+        return newRoom.save();
       },
     },
     deleteRoom: {
-      type: RoomType,
+      type: GraphQLBoolean,
       args: {
         room_id: { type: new GraphQLNonNull(GraphQLID) },
       },
-      async resolve(parent, args) {
-        const room = await Room.findById(args.room_id);
-        if (!room) {
-          throw new Error("Room not found.");
-        }
-        await room.remove();
-        return room;
+      async resolve(_, args) {
+        const result = await Room.deleteOne({ _id: args.room_id });
+        return result.deletedCount > 0; // Returns true if any document was deleted
       },
     },
     cancelBookingWithReason: {
@@ -243,14 +246,52 @@ const Mutation = new GraphQLObjectType({
         booking_id: { type: new GraphQLNonNull(GraphQLID) },
         reason: { type: new GraphQLNonNull(GraphQLString) },
       },
-      async resolve(parent, args) {
-        // Here, you would handle the notification logic later
-        const booking = await Booking.findById(args.booking_id);
-        if (!booking) {
+      async resolve(_, args) {
+        const rooms = await Room.find({ "bookedTimes._id": args.booking_id });
+        let updatedBooking = null;
+
+        if (!rooms.length) {
           throw new Error("Booking not found.");
         }
-        await booking.remove(); // Simulate the deletion and pass reason to Kafka or another service
-        return booking; // Potentially modify to include reason in the response if needed
+
+        rooms.forEach((room) => {
+          room.bookedTimes = room.bookedTimes.filter((booking) => {
+            if (booking._id.toString() === args.booking_id) {
+              // Storing the cancelled booking info before removal
+              updatedBooking = {
+                id: booking._id,
+                room: {
+                  id: room._id,
+                  name: room.name,
+                  room_type: room.room_type,
+                  bookedTimes: room.bookedTimes.filter(
+                    (bt) => bt._id.toString() !== args.booking_id
+                  ),
+                },
+                user_id: booking.user_id,
+                date: booking.date,
+                start_time: booking.startTime,
+                end_time: booking.endTime,
+                is_confirmed: booking.is_confirmed,
+                reason: args.reason, // Adding cancellation reason
+              };
+              return false; // removes the booking from the array
+            }
+            return true;
+          });
+          try {
+            room.save();
+          } catch (error) {
+            console.error("Error saving room:", error);
+            throw new Error("Failed to save room changes.");
+          }
+        });
+
+        if (!updatedBooking) {
+          throw new Error("Booking not found or already removed.");
+        }
+
+        return updatedBooking; // Return the cancelled booking info
       },
     },
   },
