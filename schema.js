@@ -24,6 +24,7 @@ const RoomType = new GraphQLObjectType({
 const BookedTimeType = new GraphQLObjectType({
   name: "BookedTime",
   fields: () => ({
+    id: { type: new GraphQLNonNull(GraphQLID) },
     date: { type: new GraphQLNonNull(GraphQLString) },
     startTime: { type: new GraphQLNonNull(GraphQLString) },
     endTime: { type: new GraphQLNonNull(GraphQLString) },
@@ -32,6 +33,21 @@ const BookedTimeType = new GraphQLObjectType({
     is_confirmed: { type: GraphQLBoolean },
   }),
 });
+const ExtendedBookedTimeType = new GraphQLObjectType({
+  name: "ExtendedBookedTime",
+  fields: () => ({
+    booking_id: { type: new GraphQLNonNull(GraphQLID) },
+    room_id: { type: new GraphQLNonNull(GraphQLID) },
+    date: { type: new GraphQLNonNull(GraphQLString) },
+    startTime: { type: new GraphQLNonNull(GraphQLString) },
+    endTime: { type: new GraphQLNonNull(GraphQLString) },
+    user_id: { type: new GraphQLNonNull(GraphQLString) },
+    room_name: { type: new GraphQLNonNull(GraphQLString) },
+    user_name: { type: new GraphQLNonNull(GraphQLString) },
+    is_confirmed: { type: GraphQLBoolean },
+  }),
+});
+
 const BookingType = new GraphQLObjectType({
   name: "Booking",
   fields: () => ({
@@ -69,6 +85,36 @@ const RootQuery = new GraphQLObjectType({
           room_type: "party",
           "bookedTimes.is_confirmed": false,
         });
+      },
+    },
+    bookingsByUser: {
+      type: new GraphQLList(ExtendedBookedTimeType), // Use the new type here
+      args: {
+        user_id: { type: new GraphQLNonNull(GraphQLString) },
+      },
+      async resolve(_, args) {
+        try {
+          const rooms = await Room.find({
+            "bookedTimes.user_id": args.user_id,
+          });
+          const bookings = rooms
+            .map((room) =>
+              room.bookedTimes
+                .filter((b) => b.user_id === args.user_id)
+                .map((booking) => ({
+                  ...booking.toObject(), // Spread existing booked time fields
+                  room_id: room._id.toString(), // Include room ID
+                  room_name: room.name,
+                  booking_id: booking._id.toString(), // Include booking ID
+                }))
+            )
+            .flat();
+          console.log(bookings);
+          return bookings;
+        } catch (error) {
+          console.error("Error fetching user bookings:", error);
+          throw new Error("Failed to fetch bookings");
+        }
       },
     },
   },
