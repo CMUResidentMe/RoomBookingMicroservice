@@ -1,3 +1,4 @@
+require("dotenv").config();
 const {
   GraphQLSchema,
   GraphQLObjectType,
@@ -10,6 +11,40 @@ const {
 const Room = require("./models/Rooms.js");
 const Booking = require("./models/Bookings.js");
 const { getStrategy } = require("./models/BookingStrategies.js");
+const KafkaService = require("./KafkaService");
+
+const kafkaBrokers = [process.env.KAFKA_BROKER].filter(Boolean);
+console.log("Kafka Brokers in schema:", kafkaBrokers);
+const kafkaService = new KafkaService(kafkaBrokers);
+// Connect Kafka when the server starts
+kafkaService.connect().catch(console.error);
+
+async function sendNotificationToUser(
+  notificationType,
+  userId,
+  message,
+  sourceID
+) {
+  const notification = {
+    notificationType,
+    eventTime: new Date().toISOString(),
+    owner: userId,
+    message,
+    sourceID,
+  };
+  console.log("Checking producer state before sending...");
+  try {
+    console.log("Preparing to send notification...");
+    await kafkaService.sendNotification("roomBookingTopic", notification);
+    console.log(
+      `Notification sent for booking ${sourceID}: ${JSON.stringify(
+        notification
+      )}`
+    );
+  } catch (error) {
+    console.error("Failed to send notification:", error);
+  }
+}
 
 const RoomType = new GraphQLObjectType({
   name: "Room",
@@ -148,7 +183,6 @@ const Mutation = new GraphQLObjectType({
       },
     },
     cancelBooking: {
-      // send kafka only if the person calling it is not the user that created it, meaning it is manager that is canceling it
       type: RoomType,
       args: {
         room_id: { type: new GraphQLNonNull(GraphQLID) },
@@ -177,8 +211,7 @@ const Mutation = new GraphQLObjectType({
         rooms.forEach((room) => {
           room.bookedTimes.forEach((booking) => {
             if (booking._id.toString() === args.booking_id) {
-              booking.is_confirmed = true; // Confirm the booking
-              // Ensure updatedBooking is correctly assigned
+              booking.is_confirmed = true;
               updatedBooking = {
                 id: booking._id,
                 user_id: booking.user_id,
@@ -205,6 +238,16 @@ const Mutation = new GraphQLObjectType({
         }
 
         console.log("Updated Booking:", updatedBooking);
+        if (updatedBooking && roomSaved) {
+          console.log("Updating notification");
+          sendNotificationToUser(
+            "BookingApproved",
+            updatedBooking.user_id,
+            `Your party room booking on ${updatedBooking.date} from ${updatedBooking.start_time} to ${updatedBooking.end_time} has been approved.`,
+            updatedBooking.id.toString() // Passing the booking ID as source ID
+          );
+        }
+
         return updatedBooking; // Return the updated booking
       },
     },
@@ -254,6 +297,14 @@ const Mutation = new GraphQLObjectType({
         if (!updatedBooking) {
           throw new Error(
             "No booking found to update or failed to save the room."
+          );
+        }
+        if (updatedBooking) {
+          sendNotificationToUser(
+            "BookingDeclined",
+            updatedBooking.user_id,
+            `Your party room booking on ${updatedBooking.date} from ${updatedBooking.start_time} to ${updatedBooking.end_time} has been declined.`,
+            updatedBooking.id.toString() // Passing the booking ID as source ID
           );
         }
 
