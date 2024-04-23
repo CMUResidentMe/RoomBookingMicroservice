@@ -33,7 +33,6 @@ async function sendNotificationToUser(
     message,
     sourceID,
   };
-  console.log("eventTime", new Date().toISOString());
   console.log("Checking producer state before sending...");
   try {
     console.log("Preparing to send notification...");
@@ -87,22 +86,28 @@ const ExtendedBookedTimeType = new GraphQLObjectType({
 function getFormattedDate() {
   const options = {
     timeZone: process.env.TIME_ZONE,
-    year: "numeric",
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
+    hour12: false, // Use 24-hour format
   };
-  return new Intl.DateTimeFormat("en-US", options).format(new Date());
+  const formatter = new Intl.DateTimeFormat("en-US", options);
+  const parts = formatter.formatToParts(new Date());
+
+  const month = parts.find((part) => part.type === "month").value;
+  const day = parts.find((part) => part.type === "day").value;
+  const hour = parts.find((part) => part.type === "hour").value;
+  const minute = parts.find((part) => part.type === "minute").value;
+
+  return `${month}-${day} ${hour}:${minute}`;
 }
+
 const moment = require("moment-timezone");
 
 function getMomentDate() {
-  return moment().tz(process.env.TIME_ZONE).format();
+  return moment().tz(process.env.TIME_ZONE).format("MM-DD HH:mm");
 }
-
 const BookingType = new GraphQLObjectType({
   name: "Booking",
   fields: () => ({
