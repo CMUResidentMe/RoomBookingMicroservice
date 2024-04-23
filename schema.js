@@ -18,7 +18,8 @@ console.log("Kafka Brokers in schema:", kafkaBrokers);
 const kafkaService = new KafkaService(kafkaBrokers);
 // Connect Kafka when the server starts
 kafkaService.connect().catch(console.error);
-
+const eventTime = getFormattedDate();
+console.log("EVENT TIME", eventTime);
 async function sendNotificationToUser(
   notificationType,
   userId,
@@ -27,11 +28,12 @@ async function sendNotificationToUser(
 ) {
   const notification = {
     notificationType,
-    eventTime: new Date().toISOString(),
+    eventTime: eventTime,
     owner: userId,
     message,
     sourceID,
   };
+  console.log("eventTime", new Date().toISOString());
   console.log("Checking producer state before sending...");
   try {
     console.log("Preparing to send notification...");
@@ -82,6 +84,24 @@ const ExtendedBookedTimeType = new GraphQLObjectType({
     is_confirmed: { type: GraphQLBoolean },
   }),
 });
+function getFormattedDate() {
+  const options = {
+    timeZone: process.env.TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  };
+  return new Intl.DateTimeFormat("en-US", options).format(new Date());
+}
+const moment = require("moment-timezone");
+
+function getMomentDate() {
+  return moment().tz(process.env.TIME_ZONE).format();
+}
 
 const BookingType = new GraphQLObjectType({
   name: "Booking",
