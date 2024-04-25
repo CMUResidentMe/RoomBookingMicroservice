@@ -46,7 +46,7 @@ async function sendNotificationToUser(
     console.error("Failed to send notification:", error);
   }
 }
-
+// Define GraphQL types for Room and Bookings
 const RoomType = new GraphQLObjectType({
   name: "Room",
   fields: () => ({
@@ -119,7 +119,7 @@ const BookingType = new GraphQLObjectType({
     is_confirmed: { type: GraphQLBoolean },
   }),
 });
-
+// Define GraphQL root query type
 const RootQuery = new GraphQLObjectType({
   name: "RootQueryType",
   fields: {
@@ -183,6 +183,7 @@ const RootQuery = new GraphQLObjectType({
 const Mutation = new GraphQLObjectType({
   name: "Mutation",
   fields: {
+    // let user create a booking
     createBooking: {
       type: RoomType,
       args: {
@@ -207,6 +208,7 @@ const Mutation = new GraphQLObjectType({
         }
       },
     },
+    // let user cancel a booking
     cancelBooking: {
       type: RoomType,
       args: {
@@ -220,6 +222,7 @@ const Mutation = new GraphQLObjectType({
         return strategy.cancelBooking(args.booking_id, args.user_id);
       },
     },
+    // let manager approve a party room booking
     approveBooking: {
       type: BookingType,
       args: {
@@ -276,6 +279,7 @@ const Mutation = new GraphQLObjectType({
         return updatedBooking; // Return the updated booking
       },
     },
+    // let manager cancel a party room booking
     declineBooking: {
       type: BookingType,
       args: {
@@ -337,7 +341,7 @@ const Mutation = new GraphQLObjectType({
         return updatedBooking;
       },
     },
-
+    // let manager create a room
     createRoom: {
       type: RoomType,
       args: {
@@ -352,6 +356,7 @@ const Mutation = new GraphQLObjectType({
         return newRoom.save();
       },
     },
+    // let manager delete a room
     deleteRoom: {
       type: GraphQLBoolean,
       args: {
