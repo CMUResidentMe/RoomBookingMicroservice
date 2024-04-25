@@ -5,14 +5,14 @@ const schema = require("./schema.js");
 const connectDB = require("./database.js");
 const KafkaService = require("./KafkaService.js");
 console.log("KafkaService imported:", KafkaService);
-
+// Import necessary modules
 const app = express();
 
 console.log("Environment Variables:");
 console.log("PORT:", process.env.PORT);
 console.log("DATABASE_URL:", process.env.DATABASE_URL);
 console.log("KAFKA_BROKER！！:", process.env.KAFKA_BROKER);
-
+// Filter out falsy values and setup Kafka brokers
 const kafkaBrokers = [process.env.KAFKA_BROKER].filter(Boolean);
 console.log("Kafka Brokers:", kafkaBrokers);
 
@@ -48,6 +48,7 @@ const server = app.listen(PORT, () => {
   connectKafkaWithRetry(5);
 });
 
+// Function to manage retries for Kafka connection
 function connectKafkaWithRetry(retries) {
   kafkaService
     .connect()
@@ -64,7 +65,7 @@ function connectKafkaWithRetry(retries) {
       }
     });
 }
-
+// Function to handle graceful shutdown on receiving termination signals
 function handleShutdown(signal) {
   console.log(`${signal} signal received: closing HTTP server`);
   server.close(async () => {
