@@ -123,7 +123,7 @@ class DefaultRoomStrategy extends BookingStrategy {
     throw new Error("Booking not found or user mismatch.");
   }
 }
-
+// party strategy vs. normal strategy
 function getStrategy(room) {
   if (room.room_type === "party") {
     return new PartyRoomStrategy(room);
